@@ -50,42 +50,8 @@ func (gc *GenerateCuriosities) Run(ctx context.Context) error {
 		return errors.New("context canceled or deadline exceeded")
 	default:
 		for _, breed := range gc.e.Breeds {
-			fileName := fmt.Sprintf("%s.json", breed)
-			filePath := path.Join(gc.e.CuriositiesFolderPath, fileName)
-			basePrompt := fmt.Sprintf(
-				templatePrompt,
-				expectedCuriositiesPerLoop,
-				breed,
-			)
-			initialCuriosities, err := gc.getCuriositiesFromJSONFile(filePath)
-			if err != nil {
-				return fmt.Errorf(
-					"could not get initial curiosities from json file: %w",
-					err,
-				)
-			}
-
-			currentCuriosities := float64(len(initialCuriosities))
-
-			missingCuriosities := wantedCuriosities - currentCuriosities
-			if missingCuriosities <= 0 {
-				continue
-			}
-
-			loopsCount := math.Ceil(
-				missingCuriosities / expectedCuriositiesPerLoop,
-			)
-
-			for i := range int(loopsCount) {
-				if err := gc.generateCuriosities(filePath, basePrompt); err != nil {
-					log.Printf(
-						"could not generate curiosities for breed %s attempt %d: %v",
-						breed,
-						i,
-						err,
-					)
-					continue
-				}
+			if err := gc.run(ctx, breed); err != nil {
+				log.Printf("could not run for breed %s: %v", breed, err)
 			}
 		}
 	}
@@ -93,7 +59,58 @@ func (gc *GenerateCuriosities) Run(ctx context.Context) error {
 	return nil
 }
 
+func (gc *GenerateCuriosities) run(
+	ctx context.Context,
+	breed string,
+) error {
+	select {
+	case <-ctx.Done():
+		return errors.New("context canceled or deadline exceeded")
+	default:
+		fileName := fmt.Sprintf("%s.json", breed)
+		filePath := path.Join(gc.e.CuriositiesFolderPath, fileName)
+		basePrompt := fmt.Sprintf(
+			templatePrompt,
+			expectedCuriositiesPerLoop,
+			breed,
+		)
+		initialCuriosities, err := gc.getCuriositiesFromJSONFile(filePath)
+		if err != nil {
+			return fmt.Errorf(
+				"could not get initial curiosities from json file: %w",
+				err,
+			)
+		}
+
+		currentCuriosities := float64(len(initialCuriosities))
+
+		missingCuriosities := wantedCuriosities - currentCuriosities
+		if missingCuriosities <= 0 {
+			return nil
+		}
+
+		loopsCount := math.Ceil(
+			missingCuriosities / expectedCuriositiesPerLoop,
+		)
+
+		for i := range int(loopsCount) {
+			if err := gc.generateCuriosities(ctx, filePath, basePrompt); err != nil {
+				fmt.Printf(
+					"could not generate curiosities for breed %s attempt %d: %v",
+					breed,
+					i,
+					err,
+				)
+				continue
+			}
+		}
+
+		return nil
+	}
+}
+
 func (gc *GenerateCuriosities) generateCuriosities(
+	ctx context.Context,
 	filePath,
 	basePrompt string,
 ) error {
@@ -103,6 +120,10 @@ func (gc *GenerateCuriosities) generateCuriosities(
 			"could not get curiosities from json file: %w",
 			err,
 		)
+	}
+
+	if len(curiosities) >= wantedCuriosities {
+		return nil
 	}
 
 	prompt := basePrompt
@@ -118,6 +139,7 @@ func (gc *GenerateCuriosities) generateCuriosities(
 	}
 
 	result, err := gc.s.ScrapOpenAIPrompt(
+		ctx,
 		prompt,
 		scraper.OpenAIModelO1Preview,
 	)

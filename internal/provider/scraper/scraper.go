@@ -1,5 +1,7 @@
 package scraper
 
+import "context"
+
 type OpenAIModel string
 
 const (
@@ -10,5 +12,9 @@ const (
 )
 
 type Scraper interface {
-	ScrapOpenAIPrompt(prompt string, model OpenAIModel) (string, error)
+	ScrapOpenAIPrompt(
+		ctx context.Context,
+		prompt string,
+		model OpenAIModel,
+	) (string, error)
 }
